@@ -8,7 +8,7 @@ It is a thin, correctness-focused layer over the browser's `MutationObserver`. N
 ~1 kB gzipped.
 
 ```js
-import { observe } from 'selector-observer';
+import { observe } from '@hurelhuyag/selector-observer';
 
 observe('.price-tag', (element) => {
     element.style.outline = '2px solid red';          // your customization
@@ -19,17 +19,86 @@ observe('.price-tag', (element) => {
 ## Install
 
 ```sh
-npm install selector-observer
+npm install @hurelhuyag/selector-observer
 ```
 
 Or drop it in a page / userscript:
 
 ```html
-<script src="https://unpkg.com/selector-observer"></script>
+<script src="https://unpkg.com/@hurelhuyag/selector-observer"></script>
 <script>
     SelectorObserver.observe('.card', el => { /* ... */ });
 </script>
 ```
+
+## Example: SlimSelect that survives AJAX
+
+[SlimSelect](https://slimselectjs.com/) is constructed per `<select>` element and has to be destroyed when that
+element goes away — it builds its own markup beside the original and registers document-level listeners. The
+usual `document.querySelectorAll('select.fancy').forEach(...)` at page load therefore enhances what exists *at
+that moment* and nothing more: a select arriving in a modal, an htmx swap or a page of search results stays a
+plain dropdown, and every select removed afterwards leaves its instance behind.
+
+That is an appear/disappear pair, which is exactly what this library reports:
+
+```js
+import { observe } from '@hurelhuyag/selector-observer';
+import SlimSelect from 'slim-select';
+import 'slim-select/styles';
+
+observe('select.fancy', (select) => {
+    const slim = new SlimSelect({ select });
+    return () => slim.destroy();          // runs when that select leaves the DOM
+});
+```
+
+One call, once, at startup. Every `select.fancy` — already on the page or arriving an hour from now — is
+enhanced exactly once, and every one that is removed gets `destroy()`d, so SlimSelect's wrapper and listeners go
+with it instead of accumulating.
+
+The element is right there, so per-element configuration needs no registry or `data-` protocol of its own:
+
+```js
+observe('select.fancy', (select) => {
+    const slim = new SlimSelect({
+        select,
+        settings: {
+            showSearch: select.options.length > 8,
+            placeholderText: select.dataset.placeholder ?? 'Select',
+            closeOnSelect: !select.multiple,
+        },
+    });
+    return () => slim.destroy();
+});
+```
+
+In a userscript or a plain page, the same thing with both libraries from a CDN:
+
+```html
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/slim-select@4/dist/slimselect.css">
+<script src="https://cdn.jsdelivr.net/npm/slim-select@4/dist/slimselect.iife.js"></script>
+<script src="https://unpkg.com/@hurelhuyag/selector-observer@0.1.0"></script>
+<script>
+    SelectorObserver.observe('select.fancy', (select) => {
+        const slim = new SlimSelect({ select });
+        return () => slim.destroy();
+    });
+</script>
+```
+
+Worth knowing for this pairing:
+
+- **SlimSelect's own DOM insertions trigger a scan.** The nodes it adds do not match `select.fancy` and the diff
+  is idempotent, so the scan settles immediately — no loop, no second instance on the same element.
+- **The original `<select>` stays in the DOM** — SlimSelect hides it with inline positioning, `tabindex="-1"`
+  and `aria-hidden`, not by removing it — so it keeps matching, and the teardown fires at the right moment:
+  when the real select goes, the instance goes.
+- **Do not put visibility or `style` in the selector.** `select.fancy:not([style])` would stop matching the
+  moment SlimSelect writes its inline style, which reads as a disappearance and destroys the instance that was
+  just created.
+- **Frameworks that recycle nodes** (Turbo's cache, some virtual-DOM diffs) may reinsert the same select. It
+  arrives as a fresh appearance and gets a fresh instance, which is correct — the old wrapper did not come back
+  with it.
 
 ## How it works
 
