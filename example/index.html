@@ -1,0 +1,62 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>selector-observer demo</title>
+<style>
+    body { font: 16px/1.5 system-ui, sans-serif; margin: 2rem; max-width: 46rem; }
+    button { font: inherit; padding: .4rem .8rem; margin-right: .5rem; }
+    #list { margin-top: 1rem; display: flex; flex-wrap: wrap; gap: .5rem; }
+    .card { border: 1px solid #bbb; border-radius: 6px; padding: .6rem 1rem; }
+    /* Applied by the observer, removed by its teardown. */
+    .card[data-customized] { border-color: #2b7; background: #eafaf1; }
+    #log { margin-top: 1rem; height: 12rem; overflow: auto; background: #111; color: #ddd;
+           padding: .6rem; border-radius: 6px; font: 13px/1.5 ui-monospace, monospace; }
+</style>
+
+<h1>selector-observer</h1>
+<p>Cards get a badge and a green frame when they appear, and it is undone when they leave.</p>
+
+<button id="add">Add card</button>
+<button id="remove">Remove last card</button>
+<button id="toggle">Toggle class on first card</button>
+<button id="stop">Stop observing (undoes everything)</button>
+
+<div id="list"></div>
+<pre id="log"></pre>
+
+<script type="module">
+    import { observe } from '../dist/index.mjs';
+
+    const list = document.getElementById('list');
+    const log = (message) => {
+        document.getElementById('log').textContent += `${message}\n`;
+        document.getElementById('log').scrollTop = 1e9;
+    };
+    let counter = 0;
+
+    const watcher = observe('.card', (card) => {
+        log(`appear   ${card.textContent}`);
+        card.dataset.customized = '';
+        const badge = document.createElement('b');
+        badge.textContent = ' ✓';
+        card.append(badge);
+
+        return () => {                       // undo, on disappear or on stop()
+            log(`disappear ${card.textContent.replace(' ✓', '')}`);
+            delete card.dataset.customized;
+            badge.remove();
+        };
+    });
+
+    document.getElementById('add').onclick = () => {
+        const card = document.createElement('div');
+        card.className = 'card';
+        card.textContent = `card ${++counter}`;
+        list.append(card);
+    };
+    document.getElementById('remove').onclick = () => list.lastElementChild?.remove();
+    document.getElementById('toggle').onclick = () => list.firstElementChild?.classList.toggle('card');
+    document.getElementById('stop').onclick = () => {
+        watcher.stop();
+        log('stopped');
+    };
+</script>
